@@ -30,6 +30,7 @@ import { requestActiveTerminalPaneSplit } from '@/components/tab-bar/request-act
 import { performContextualTourStepAction } from './contextual-tour-step-actions'
 import { openWorkspaceCreationComposerWithTourHandoff } from './workspace-creation-tour-handoff'
 import { BROWSER_CLIENT_HOSTED_REMOTE_SETTINGS_TARGET_ID } from '@/lib/settings-navigation-types'
+import { hasVisibleOverlay } from '@/lib/visible-overlay'
 
 export function ContextualTourOverlay(): JSX.Element | null {
   const activeTourId = useAppStore((s) => s.activeContextualTourId)
@@ -44,6 +45,7 @@ export function ContextualTourOverlay(): JSX.Element | null {
   const activeTourSuppressed = useAppStore((s) => s.activeContextualTourSuppressed)
   const keybindings = useAppStore((s) => s.keybindings)
   const activeTabId = useAppStore((s) => s.activeTabId)
+  const activeTabType = useAppStore((s) => s.activeTabType)
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const markContextualToursSeen = useAppStore((s) => s.markContextualToursSeen)
   const advanceContextualTour = useAppStore((s) => s.advanceContextualTour)
@@ -166,6 +168,7 @@ export function ContextualTourOverlay(): JSX.Element | null {
     if (measurement.kind !== 'render') {
       // Discard stale/detached targets so the next scroll performs a full scan.
       measuredTargetRef.current = null
+      setRenderState(null)
     }
     if (measurement.kind === 'advance') {
       advanceContextualTour()
@@ -247,7 +250,7 @@ export function ContextualTourOverlay(): JSX.Element | null {
 
   useLayoutEffect(() => {
     measureTourOverlay()
-  }, [measureTourOverlay])
+  }, [activeTabId, activeTabType, measureTourOverlay])
 
   useEffect(() => {
     if (!activeTourId || !renderState || markedTourIdRef.current === activeTourId) {
@@ -323,12 +326,11 @@ export function ContextualTourOverlay(): JSX.Element | null {
     }
 
     const timeout = window.setTimeout(() => {
-      // Why: an open menu closes when focus leaves it, e.g. the + menu that just advanced this tour.
-      if (document.activeElement?.closest('[role="menu"]')) {
+      const panel = panelRef.current
+      if (!panel || hasVisibleOverlay({ ignoreContaining: panel })) {
         return
       }
-      const panel = panelRef.current
-      const firstFocusable = panel ? getContextualTourFocusableElements(panel)[0] : null
+      const firstFocusable = getContextualTourFocusableElements(panel)[0]
       ;(firstFocusable ?? panel)?.focus({ preventScroll: true })
     }, 0)
     return () => window.clearTimeout(timeout)
@@ -341,7 +343,10 @@ export function ContextualTourOverlay(): JSX.Element | null {
     focusedStepRef.current = null
     const previousFocus = previousFocusRef.current
     previousFocusRef.current = null
-    if (previousFocus?.isConnected) {
+    if (
+      previousFocus?.isConnected &&
+      !hasVisibleOverlay({ ignoreContaining: previousFocus, ignoreDismissed: true })
+    ) {
       previousFocus.focus({ preventScroll: true })
     }
   }, [activeTourId])
